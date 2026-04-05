@@ -1,0 +1,13 @@
+{
+  "name": "linkedin-sync",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "scrape": "node scraper.js",
+    "update": "node update-html.js",
+    "sync": "node scraper.js && node update-html.js"
+  },
+  "dependencies": {
+    "playwright": "^1.44.0"
+  }
+}
