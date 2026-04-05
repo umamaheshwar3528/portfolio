@@ -37,12 +37,21 @@ async function login(ctx, page) {
     } catch {
       throw new Error('LINKEDIN_COOKIES is not valid JSON');
     }
-    // Playwright cookies need a domain field
-    const normalized = cookies.map(c => ({
-      ...c,
-      domain: c.domain || '.linkedin.com',
-      path:   c.path   || '/',
-    }));
+    // Normalize cookies for Playwright (strict sameSite values, no extra fields)
+    const SAME_SITE_MAP = { no_restriction: 'None', strict: 'Strict', lax: 'Lax' };
+    const normalized = cookies.map(({ name, value, domain, path, secure, httpOnly, sameSite, expirationDate }) => {
+      const cookie = {
+        name,
+        value,
+        domain: domain || '.linkedin.com',
+        path:   path   || '/',
+        secure: secure ?? true,
+        httpOnly: httpOnly ?? false,
+        sameSite: SAME_SITE_MAP[(sameSite || '').toLowerCase()] || 'Lax',
+      };
+      if (expirationDate) cookie.expires = expirationDate;
+      return cookie;
+    });
     await ctx.addCookies(normalized);
     await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await sleep(2000);
