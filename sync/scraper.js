@@ -3,11 +3,17 @@
  * LinkedIn scraper — pulls certifications, experience, and education
  * from your LinkedIn profile and saves them to linkedin-data.json.
  *
- * Required env vars:
- *   LINKEDIN_EMAIL          your LinkedIn login email
- *   LINKEDIN_PASSWORD       your LinkedIn password
- *   LINKEDIN_PROFILE_SLUG   the slug from your profile URL
- *                           e.g. "uma-maheshwar-reddy-manda-"
+ * Required env vars (one of the two auth methods):
+ *
+ *   Cookie auth (recommended — avoids bot detection):
+ *     LINKEDIN_COOKIES        JSON array exported from Cookie-Editor browser extension
+ *
+ *   Password auth (fallback):
+ *     LINKEDIN_EMAIL          your LinkedIn login email
+ *     LINKEDIN_PASSWORD       your LinkedIn password
+ *
+ *   LINKEDIN_PROFILE_SLUG     slug from your profile URL
+ *                             e.g. "uma-maheshwar-reddy-manda-"
  */
 const { chromium } = require('playwright');
 const fs   = require('fs');
@@ -21,8 +27,36 @@ function sleep(ms) {
 }
 
 // ── Login ────────────────────────────────────────────────────────────────────
-async function login(page) {
-  console.log('[scraper] logging in…');
+async function login(ctx, page) {
+  // ── Method 1: cookies (preferred, bypasses bot detection) ──
+  if (process.env.LINKEDIN_COOKIES) {
+    console.log('[scraper] loading session cookies…');
+    let cookies;
+    try {
+      cookies = JSON.parse(process.env.LINKEDIN_COOKIES);
+    } catch {
+      throw new Error('LINKEDIN_COOKIES is not valid JSON');
+    }
+    // Playwright cookies need a domain field
+    const normalized = cookies.map(c => ({
+      ...c,
+      domain: c.domain || '.linkedin.com',
+      path:   c.path   || '/',
+    }));
+    await ctx.addCookies(normalized);
+    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await sleep(2000);
+
+    const loggedIn = await page.evaluate(() =>
+      !window.location.href.includes('/login') && !window.location.href.includes('/authwall')
+    );
+    if (!loggedIn) throw new Error('Cookies are expired — re-export from your browser and update the LINKEDIN_COOKIES secret');
+    console.log('[scraper] login ok (cookies)');
+    return;
+  }
+
+  // ── Method 2: email + password ──
+  console.log('[scraper] logging in with email/password…');
   await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
   await sleep(1200);
   await page.fill('#username', process.env.LINKEDIN_EMAIL);
@@ -30,9 +64,17 @@ async function login(page) {
   await page.fill('#password', process.env.LINKEDIN_PASSWORD);
   await sleep(500);
   await page.click('button[type="submit"]');
-  await page.waitForURL(/linkedin\.com\/(feed|in\/|mynetwork|jobs)/, { timeout: 30000 });
+  await page.waitForURL(/linkedin\.com\/(feed|in\/|mynetwork|jobs|checkpoint)/, { timeout: 30000 });
+
+  if (page.url().includes('checkpoint')) {
+    throw new Error(
+      'LinkedIn is asking for identity verification (CAPTCHA or email code). ' +
+      'Switch to cookie-based auth: export cookies from your browser and add as LINKEDIN_COOKIES secret.'
+    );
+  }
+
   await sleep(2000);
-  console.log('[scraper] login ok');
+  console.log('[scraper] login ok (password)');
 }
 
 // ── Page helper ──────────────────────────────────────────────────────────────
@@ -190,7 +232,7 @@ async function main() {
   const page = await ctx.newPage();
 
   try {
-    await login(page);
+    await login(ctx, page);
     const certifications = await scrapeCertifications(page);
     const experience     = await scrapeExperience(page);
     const education      = await scrapeEducation(page);

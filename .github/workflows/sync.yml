@@ -34,6 +34,7 @@ jobs:
 
       - name: Scrape LinkedIn
         env:
+          LINKEDIN_COOKIES:      ${{ secrets.LINKEDIN_COOKIES }}
           LINKEDIN_EMAIL:        ${{ secrets.LINKEDIN_EMAIL }}
           LINKEDIN_PASSWORD:     ${{ secrets.LINKEDIN_PASSWORD }}
           LINKEDIN_PROFILE_SLUG: uma-maheshwar-reddy-manda-
